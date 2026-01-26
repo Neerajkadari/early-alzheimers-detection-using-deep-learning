@@ -76,3 +76,15 @@ Flask
 NumPy
 
 Pillow (PIL)
+
+ 📥 Trained Models
+
+Due to GitHub file size limits, trained model files are provided via
+GitHub Releases.
+
+Download
+Go to the Releases section of this repository and download:
+- `alzheimers_oasis_early_ad.keras`
+- `alzheimer_cnn_v2.keras`
+
+Place the models locally before running the application.
