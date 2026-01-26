@@ -24,12 +24,12 @@ SCREENING_MODEL_FILE = "alzheimers_oasis_early_ad.keras"
 V2_MODEL_FILE = "alzheimer_cnn_v2.keras"
 
 SCREENING_MODEL_URL = (
-    "https://github.com/Neerjakadari/early-alzheimers-detection-using-deep-learning/"
+    "https://github.com/Neerajkadari/early-alzheimers-detection-using-deep-learning/"
     "releases/download/v1.0.0/alzheimers_oasis_early_ad.keras"
 )
 
 V2_MODEL_URL = (
-    "https://github.com/Neerjakadari/early-alzheimers-detection-using-deep-learning/"
+    "https://github.com/Neerajkadari/early-alzheimers-detection-using-deep-learning/"
     "releases/download/v1.0.0/alzheimer_cnn_v2.keras"
 )
 
@@ -211,5 +211,6 @@ def index():
 # =====================================================
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
