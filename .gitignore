@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.env
+.venv/
+
+# Models
+*.keras
+*.h5
+
+# Data
+dataset/
+uploads/
+
+# Sounds (optional if large)
+*.mp3
