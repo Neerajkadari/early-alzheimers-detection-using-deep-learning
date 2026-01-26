@@ -12,11 +12,47 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+import requests
+
 # =====================================================
-# MODEL PATHS
+# MODEL LOADING (RENDER + GITHUB RELEASES)
 # =====================================================
-SCREENING_MODEL_PATH = r"C:\Users\neera\Desktop\models\alzheimers_oasis_early_ad.keras"
-V2_MODEL_PATH = r"C:\Users\neera\Desktop\models\alzheimer_cnn_v2.keras"
+MODEL_DIR = "models"
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+SCREENING_MODEL_FILE = "alzheimers_oasis_early_ad.keras"
+V2_MODEL_FILE = "alzheimer_cnn_v2.keras"
+
+SCREENING_MODEL_URL = (
+    "https://github.com/Neerjakadari/early-alzheimers-detection-using-deep-learning/"
+    "releases/download/v1.0.0/alzheimers_oasis_early_ad.keras"
+)
+
+V2_MODEL_URL = (
+    "https://github.com/Neerjakadari/early-alzheimers-detection-using-deep-learning/"
+    "releases/download/v1.0.0/alzheimer_cnn_v2.keras"
+)
+
+SCREENING_MODEL_PATH = os.path.join(MODEL_DIR, SCREENING_MODEL_FILE)
+V2_MODEL_PATH = os.path.join(MODEL_DIR, V2_MODEL_FILE)
+
+def download_if_missing(url, path):
+    if os.path.exists(path):
+        return
+    print(f"⬇️ Downloading {os.path.basename(path)}")
+    r = requests.get(url, stream=True)
+    r.raise_for_status()
+    with open(path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            f.write(chunk)
+    print(f"✅ Downloaded {os.path.basename(path)}")
+
+download_if_missing(SCREENING_MODEL_URL, SCREENING_MODEL_PATH)
+download_if_missing(V2_MODEL_URL, V2_MODEL_PATH)
+
+screening_model = tf.keras.models.load_model(SCREENING_MODEL_PATH)
+v2_model = tf.keras.models.load_model(V2_MODEL_PATH)
+
 
 # =====================================================
 # SOUND PATHS (YOUR EXACT LOCATIONS)
@@ -175,4 +211,5 @@ def index():
 # =====================================================
 if __name__ == "__main__":
     app.run(debug=True)
+
 
