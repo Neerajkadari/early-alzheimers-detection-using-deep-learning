@@ -21,8 +21,8 @@ V2_MODEL_PATH = r"C:\Users\neera\Desktop\models\alzheimer_cnn_v2.keras"
 # =====================================================
 # SOUND PATHS (YOUR EXACT LOCATIONS)
 # =====================================================
-GOOD_SOUND_PATH = r"C:\Users\neera\Desktop\models\sound\chime-alert-demo-309545.mp3"
-BAD_SOUND_PATH  = r"C:\Users\neera\Desktop\models\sound\wrong-answer-126515.mp3"
+GOOD_SOUND_PATH = r"chime-alert-demo-309545.mp3"
+BAD_SOUND_PATH  = r"wrong-answer-126515.mp3"
 
 # =====================================================
 # LOAD MODELS
@@ -175,3 +175,4 @@ def index():
 # =====================================================
 if __name__ == "__main__":
     app.run(debug=True)
+
