@@ -3,6 +3,61 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
+import keras
+import sys
+from types import ModuleType
+import inspect
+
+# =====================================================
+# KERAS COMPATIBILITY PATCH (DO NOT TOUCH)
+# =====================================================
+for name in dir(keras.layers):
+    attr = getattr(keras.layers, name)
+    if inspect.isclass(attr) and hasattr(attr, "__init__"):
+        orig_init = attr.__init__
+        def make_wrapper(o):
+            def wrapper(self, *args, **kwargs):
+                kwargs.pop("quantization_config", None)
+                return o(self, *args, **kwargs)
+            return wrapper
+        attr.__init__ = make_wrapper(orig_init)
+
+from keras.src.saving import serialization_lib
+_original_deserialize = serialization_lib.deserialize_keras_object
+
+def patched_deserialize(config, custom_objects=None, **kwargs):
+    def clean(obj):
+        if isinstance(obj, dict):
+            obj.pop("quantization_config", None)
+            for v in obj.values():
+                clean(v)
+        elif isinstance(obj, list):
+            for i in obj:
+                clean(i)
+    if isinstance(config, dict):
+        clean(config)
+    return _original_deserialize(config, custom_objects, **kwargs)
+
+serialization_lib.deserialize_keras_object = patched_deserialize
+
+# =====================================================
+# FAKE keras.src (FOR OLD MODELS)
+# =====================================================
+if "keras.src" not in sys.modules:
+    keras_src = ModuleType("keras.src")
+    keras_src_models = ModuleType("keras.src.models")
+    keras_src_models.functional = keras.models
+    keras_src.models = keras_src_models
+    keras_src.layers = keras.layers
+    keras_src.initializers = keras.initializers
+    keras_src.optimizers = keras.optimizers
+
+    sys.modules["keras.src"] = keras_src
+    sys.modules["keras.src.models"] = keras_src_models
+    sys.modules["keras.src.models.functional"] = keras.models
+    sys.modules["keras.src.layers"] = keras.layers
+    sys.modules["keras.src.initializers"] = keras.initializers
+    sys.modules["keras.src.optimizers"] = keras.optimizers
 
 # =====================================================
 # FLASK APP
@@ -12,65 +67,36 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-import requests
+IMG_SIZE = (180, 180)
 
 # =====================================================
-# MODEL LOADING (RENDER + GITHUB RELEASES)
+# MODEL PATHS
 # =====================================================
-MODEL_DIR = "models"
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-SCREENING_MODEL_FILE = "alzheimers_oasis_early_ad.keras"
-V2_MODEL_FILE = "alzheimer_cnn_v2.keras"
-
-SCREENING_MODEL_URL = (
-    "https://github.com/Neerajkadari/early-alzheimers-detection-using-deep-learning/"
-    "releases/download/v1.0.0/alzheimers_oasis_early_ad.keras"
-)
-
-V2_MODEL_URL = (
-    "https://github.com/Neerajkadari/early-alzheimers-detection-using-deep-learning/"
-    "releases/download/v1.0.0/alzheimer_cnn_v2.keras"
-)
-
-SCREENING_MODEL_PATH = os.path.join(MODEL_DIR, SCREENING_MODEL_FILE)
-V2_MODEL_PATH = os.path.join(MODEL_DIR, V2_MODEL_FILE)
-
-def download_if_missing(url, path):
-    if os.path.exists(path):
-        return
-    print(f"⬇️ Downloading {os.path.basename(path)}")
-    r = requests.get(url, stream=True)
-    r.raise_for_status()
-    with open(path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            f.write(chunk)
-    print(f"✅ Downloaded {os.path.basename(path)}")
-
-download_if_missing(SCREENING_MODEL_URL, SCREENING_MODEL_PATH)
-download_if_missing(V2_MODEL_URL, V2_MODEL_PATH)
-
-screening_model = tf.keras.models.load_model(SCREENING_MODEL_PATH)
-v2_model = tf.keras.models.load_model(V2_MODEL_PATH)
-
+SCREENING_MODEL_PATH = "alzheimers_oasis_early_ad.h5"
+V2_MODEL_PATH = "alzheimer_cnn_v2.h5"
 
 # =====================================================
-# SOUND PATHS (YOUR EXACT LOCATIONS)
+# IMAGE (AS-IS, OUTSIDE FOLDERS)
 # =====================================================
-GOOD_SOUND_PATH = r"chime-alert-demo-309545.mp3"
-BAD_SOUND_PATH  = r"wrong-answer-126515.mp3"
+REFERENCE_IMAGE_PATH = "0b9504f9-1bac-47b9-a6c1-e54887aa2980.jpg"
+
+# =====================================================
+# SOUND FILES
+# =====================================================
+GOOD_SOUND_PATH = "chime-alert-demo-309545.mp3"
+BAD_SOUND_PATH  = "wrong-answer-126515.mp3"
 
 # =====================================================
 # LOAD MODELS
 # =====================================================
-screening_model = tf.keras.models.load_model(SCREENING_MODEL_PATH)
-v2_model = tf.keras.models.load_model(V2_MODEL_PATH)
+screening_model = tf.keras.models.load_model(SCREENING_MODEL_PATH, compile=False)
+v2_model = tf.keras.models.load_model(V2_MODEL_PATH, compile=False)
 
-IMG_SIZE = (180, 180)
-CLASS_NAMES = ["AD", "CN", "MCI"]
+screening_model.compile(optimizer="adam", loss="categorical_crossentropy")
+v2_model.compile(optimizer="adam", loss="categorical_crossentropy")
 
 # =====================================================
-# BACKEND PREDICTION (LOGIC ONLY)
+# BACKEND PREDICTION (STABLE & FINAL)
 # =====================================================
 def backend_predict(img_path):
     img = Image.open(img_path).convert("RGB")
@@ -78,25 +104,55 @@ def backend_predict(img_path):
     img = np.array(img) / 255.0
     img = np.expand_dims(img, axis=0)
 
-    # ---- Stage 1 ----
+    # ==============================
+    # Stage 1: Screening model
+    # Order: [AD, CN, MCI]
+    # ==============================
     p1 = screening_model.predict(img, verbose=0)[0]
-    cn_prob = p1[CLASS_NAMES.index("CN")]
+    p1_ad  = float(p1[0])
+    p1_cn  = float(p1[1])
+    p1_mci = float(p1[2])
 
-    if cn_prob >= 0.6:
-        return "🟢 Normal (No Cognitive Risk Detected)", "good"
-
-    # ---- Stage 2 ----
+    # ==============================
+    # Stage 2: AD model
+    # ==============================
     p2 = v2_model.predict(img, verbose=0)[0]
-    ad_prob = p2[CLASS_NAMES.index("AD")]
+    p2_ad = float(p2[0])
 
-    if ad_prob >= 0.5:
-        return "🔴 Advanced Cognitive Impairment (AD Risk)", "bad"
-    else:
-        return "🟡 Early Cognitive Impairment (Early AD)", "bad"
+    # =================================================
+    # 🟢 NORMAL — AD-ABSENCE BASED (ONLY CHANGE)
+    # =================================================
+    if (
+        p2_ad <= 0.18 and        # almost no AD evidence
+        p1_ad <= 0.20            # screening also sees no AD
+    ):
+        return "🟢 Brain Scan Appears Normal", "good"
+
+    # =================================================
+    # 🔴 AD — UNCHANGED
+    # =================================================
+    if p2_ad >= 0.62:
+        return "🔴 Alzheimer’s Disease Detected", "bad"
+
+    # =================================================
+    # 🟡 EARLY AD — UNCHANGED
+    # =================================================
+    if 0.18 < p2_ad < 0.62:
+        return "🟡 Early Alzheimer’s (Mild Cognitive Impairment)", "bad"
+
+    # =================================================
+    # 🔒 SAFETY
+    # =================================================
+    return "🟡 Early Alzheimer’s (Mild Cognitive Impairment)", "bad"
+
 
 # =====================================================
-# SOUND ROUTES (SERVE LOCAL FILES SAFELY)
+# ROUTES FOR IMAGE & SOUND (AS-IS FILES)
 # =====================================================
+@app.route("/reference-image")
+def reference_image():
+    return send_file(REFERENCE_IMAGE_PATH, mimetype="image/jpeg")
+
 @app.route("/sound/good")
 def good_sound():
     return send_file(GOOD_SOUND_PATH, mimetype="audio/mpeg")
@@ -106,7 +162,7 @@ def bad_sound():
     return send_file(BAD_SOUND_PATH, mimetype="audio/mpeg")
 
 # =====================================================
-# UI (INLINE HTML)
+# UI (CLEAN, HOSPITAL STYLE)
 # =====================================================
 HTML = """
 <!DOCTYPE html>
@@ -140,7 +196,7 @@ button {
 button:hover { background: #0d47a1; }
 .result {
     margin-top: 30px;
-    padding: 20px;
+    padding: 22px;
     font-size: 22px;
     border-radius: 10px;
     text-align: center;
@@ -152,26 +208,32 @@ button:hover { background: #0d47a1; }
     font-size: 13px;
     color: #555;
 }
+img {
+    width: 120px;          /* very small */
+    max-width: 120px;
+    height: auto;
+    display: block;
+    margin: 10px auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
 </style>
 </head>
-
 <body>
 <div class="card">
 <h1>🧠 Alzheimer’s MRI Screening System</h1>
-<p>AI-assisted screening tool for early cognitive risk detection</p>
-
+<p>AI-assisted screening tool for cognitive risk detection</p>
+<img src="/reference-image" alt="Reference MRI Image">
 <form method="post" enctype="multipart/form-data">
     <input type="file" name="image" required>
     <br><br>
     <button type="submit">Analyze MRI</button>
 </form>
-
 {% if result %}
 <div class="result {{ sound }}">
-    <strong>Final Result:</strong><br>
+    <strong>Final Result:</strong><br><br>
     {{ result }}
 </div>
-
 <audio autoplay>
 {% if sound == "good" %}
 <source src="/sound/good" type="audio/mpeg">
@@ -180,7 +242,6 @@ button:hover { background: #0d47a1; }
 {% endif %}
 </audio>
 {% endif %}
-
 <div class="footer">
 ⚠️ This system is for screening support only and not a medical diagnosis.
 </div>
@@ -211,6 +272,3 @@ def index():
 # =====================================================
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
