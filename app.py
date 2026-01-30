@@ -168,7 +168,7 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Alzheimer’s MRI Screening</title>
+<title>Early Alzheimer’s MRI Screening</title>
 <style>
 body {
     font-family: 'Segoe UI', sans-serif;
@@ -217,23 +217,29 @@ img {
     border-radius: 8px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
+
 </style>
 </head>
 <body>
 <div class="card">
+
 <h1>🧠 Alzheimer’s MRI Screening System</h1>
 <p>AI-assisted screening tool for cognitive risk detection</p>
+
 <img src="/reference-image" alt="Reference MRI Image">
+
 <form method="post" enctype="multipart/form-data">
     <input type="file" name="image" required>
     <br><br>
     <button type="submit">Analyze MRI</button>
 </form>
+
 {% if result %}
 <div class="result {{ sound }}">
     <strong>Final Result:</strong><br><br>
     {{ result }}
 </div>
+
 <audio autoplay>
 {% if sound == "good" %}
 <source src="/sound/good" type="audio/mpeg">
@@ -242,9 +248,11 @@ img {
 {% endif %}
 </audio>
 {% endif %}
+
 <div class="footer">
 ⚠️ This system is for screening support only and not a medical diagnosis.
 </div>
+
 </div>
 </body>
 </html>
